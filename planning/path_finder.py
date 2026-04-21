@@ -1,6 +1,7 @@
 import heapq
+import math
 
-def heuristic(a, b, belief_map=None):
+def heuristic(a, b, belief_map=None, weight=15):
     """
     Hàm Heuristic nâng cao: Manhattan Distance + Risk Penalty
     """
@@ -13,28 +14,31 @@ def heuristic(a, b, belief_map=None):
         # Lấy xác suất rủi ro tại ô (a[0], a[1])
         # Xác suất càng cao, chi phí ước lượng càng lớn
         risk_val = belief_map[a[0], a[1]]
-        # Hệ số 15 giúp xe cực kỳ ưu tiên các khu vực 'sạch' (xác suất thấp)
-        risk_penalty = risk_val * 15 
+        
+        # SỬA ĐỔI: Nhân với trọng số động (weight) do AI quyết định thay vì fix cứng số 15
+        risk_penalty = risk_val * weight 
         
     return dist + risk_penalty
 
-def a_star_search(grid, start, goal, belief_map=None):
-    """
-    Thuật toán A* nhận thêm bản đồ niềm tin để tìm đường đi an toàn nhất
-    """
-    neighbors = [(0,1), (0,-1), (1,0), (-1,0)] # 4 hướng di chuyển
+def a_star_search(grid, start, goal, belief_map=None, current_weight=15):
+    # NÂNG CẤP 1: Khai báo 8 hướng di chuyển
+    # (dx, dy, cost)
+    neighbors = [
+        (0, 1, 1), (0, -1, 1), (1, 0, 1), (-1, 0, 1),             # 4 hướng thẳng
+        (1, 1, 1.414), (1, -1, 1.414), (-1, 1, 1.414), (-1, -1, 1.414) # 4 hướng chéo
+    ]
+    
     close_set = set()
     came_from = {}
-    
     g_score = {start: 0}
-    # Sử dụng hàm heuristic có tính đến rủi ro
-    f_score = {start: heuristic(start, goal, belief_map)}
+    
+    # SỬA ĐỔI: Truyền current_weight vào hàm heuristic
+    f_score = {start: heuristic(start, goal, belief_map, current_weight)}
     
     o_heap = []
     heapq.heappush(o_heap, (f_score[start], start))
     
     while o_heap:
-        # Lấy ô có f_score thấp nhất (kết hợp giữa đường ngắn và rủi ro thấp)
         current = heapq.heappop(o_heap)[1]
 
         if current == goal:
@@ -42,32 +46,36 @@ def a_star_search(grid, start, goal, belief_map=None):
 
         close_set.add(current)
         
-        for i, j in neighbors:
+        for i, j, cost in neighbors: # Lấy thêm biến cost
             neighbor = current[0] + i, current[1] + j
             
             # Kiểm tra biên
             if 0 <= neighbor[0] < grid.shape[0] and 0 <= neighbor[1] < grid.shape[1]:
-                # Kiểm tra vật cản cứng (đã xác nhận)
                 if grid[neighbor[0]][neighbor[1]] == 1: 
                     continue 
+                
+                # NÂNG CẤP 2: Chống đi xuyên góc (Anti-corner-cutting)
+                # Nếu đi chéo, cả 2 ô liền kề tạo nên góc chéo đó phải trống
+                if i != 0 and j != 0:
+                    if grid[current[0]+i][current[1]] == 1 or grid[current[0]][current[1]+j] == 1:
+                        continue
             else: 
                 continue
 
-            # Tính toán g_score: mỗi bước đi mặc định tốn phí là 1
-            tentative_g_score = g_score[current] + 1
+            # NÂNG CẤP 3: Cộng chi phí thực tế (1 hoặc 1.414) thay vì luôn cộng 1
+            tentative_g_score = g_score[current] + cost
             
             if neighbor in close_set and tentative_g_score >= g_score.get(neighbor, 0):
                 continue
                 
-            # Nếu tìm thấy đường đi tốt hơn hoặc ô này chưa được thăm
             if tentative_g_score < g_score.get(neighbor, float('inf')):
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative_g_score
-                # Nâng cấp: f(n) = g(n) + h(n) (trong đó h(n) đã bao gồm Risk Penalty)
-                f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, goal, belief_map)
                 
-                # Tránh trùng lặp trong heap (tối ưu hiệu năng)
-                if neighbor not in [i[1] for i in o_heap]:
+                # SỬA ĐỔI: Truyền current_weight vào hàm heuristic cho các bước lặp
+                f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, goal, belief_map, current_weight)
+                
+                if neighbor not in [n[1] for n in o_heap]:
                     heapq.heappush(o_heap, (f_score[neighbor], neighbor))
                 
     return False
